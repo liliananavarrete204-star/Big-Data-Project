@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Siren Detector</title>
+    
+    <!-- Scripts de TensorFlow y Teachable Machine -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.4.0/dist/speech-commands.min.js"></script>
+    
+    <!-- CSS Propio -->
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+    <header>
+        <h1>Sistema Acústico de Tráfico Inteligente (SATS)
+        <div class="subtitle">Análisis Acústico en Tiempo Real</div>
+    </header>
+
+    <div class="dashboard">
+        
+        <!-- Semáforo -->   
+        <div class="traffic-light-container">
+            <div class="light red" id="light-red"></div>
+            <div class="light yellow" id="light-yellow"></div>
+            <div class="light green" id="light-green"></div>
+        </div>
+
+        <!-- Panel de Alerta -->
+        <div class="alert-panel state-normal" id="alert-panel">
+            <div class="icon-container" id="alert-icon">🚗</div>
+            <div class="alert-title" id="alert-text">TRÁFICO NORMAL</div>
+            
+            <!-- Visualizador de Frecuencia (Canvas Real) -->
+            <div class="audio-visualizer-wrapper">
+                <canvas id="audio-canvas"></canvas>
+            </div>
+
+            <!-- Panel Multiclase (Probabilidades) -->
+            <div class="multiclass-container">
+                <h3>Análisis de Probabilidades</h3>
+                
+                <div class="class-bar">
+                    <div class="class-label">
+                        <span>Ruido de fondo</span>
+                        <span id="val-fondo">--%</span>
+                    </div>
+                    <div class="bar-bg"><div class="bar-fill fill-normal" id="fill-fondo"></div></div>
+                </div>
+
+                <div class="class-bar">
+                    <div class="class-label">
+                        <span>Ambulancia</span>
+                        <span id="val-ambulancia">--%</span>
+                    </div>
+                    <div class="bar-bg"><div class="bar-fill fill-ambulancia" id="fill-ambulancia"></div></div>
+                </div>
+
+                <div class="class-bar">
+                    <div class="class-label">
+                        <span>Policía</span>
+                        <span id="val-policia">--%</span>
+                    </div>
+                    <div class="bar-bg"><div class="bar-fill fill-policia" id="fill-policia"></div></div>
+                </div>
+
+                <div class="class-bar">
+                    <div class="class-label">
+                        <span>Bomberos</span>
+                        <span id="val-bomberos">--%</span>
+                    </div>
+                    <div class="bar-bg"><div class="bar-fill fill-bomberos" id="fill-bomberos"></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Controles Manuales -->
+    <div class="controls">
+        <button id="btn-start">Activar Micrófono (IA)</button>
+    </div>
+
+    <!-- JS Propio -->
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,216 @@
+// ==========================================
+// CONFIGURACIÓN DE TEACHABLE MACHINE
+// ==========================================
+const URL = "https://teachablemachine.withgoogle.com/models/0tv3sTwBF/";
+
+let recognizer;
+let audioContext;
+let analyser;
+let microphone;
+let isListening = false;
+
+// Obtener elementos de UI
+const btnStart = document.getElementById('btn-start');
+const canvas = document.getElementById('audio-canvas');
+const canvasCtx = canvas.getContext('2d');
+let animationId;
+
+// Referencias a UI del panel principal
+const panel = document.getElementById('alert-panel');
+const icon = document.getElementById('alert-icon');
+const text = document.getElementById('alert-text');
+
+// Diccionario para mapear las clases del modelo a la UI
+// Asegúrate de que las IDs coincidan con el index.html
+const uiMap = {
+    'ruido de fondo': { fill: 'fill-fondo', val: 'val-fondo', stateClass: 'state-normal', icon: '🚗', label: 'TRÁFICO NORMAL', color: '#00ffcc', light: 'green' },
+    'ambulancia':     { fill: 'fill-ambulancia', val: 'val-ambulancia', stateClass: 'state-ambulancia', icon: '🚑', label: 'AMBULANCIA', color: '#0066ff', light: 'red' },
+    'policia':        { fill: 'fill-policia', val: 'val-policia', stateClass: 'state-policia', icon: '👮', label: 'POLICÍA', color: '#ff2a55', light: 'red' },
+    'bomberos':       { fill: 'fill-bomberos', val: 'val-bomberos', stateClass: 'state-bomberos', icon: '🚒', label: 'BOMBEROS', color: '#ff6600', light: 'red' }
+};
+
+// Función para normalizar el texto de las clases devueltas por el modelo
+// Por si las escribiste con mayúsculas, acentos, etc.
+function normalizeClassName(className) {
+    const lower = className.toLowerCase();
+    if(lower.includes('fondo') || lower === 'normal') return 'ruido de fondo';
+    if(lower.includes('polic')) return 'policia';
+    if(lower.includes('ambulancia')) return 'ambulancia';
+    if(lower.includes('bombero')) return 'bomberos';
+    return 'ruido de fondo'; // fallback por defecto
+}
+
+// Control del semáforo
+function setTrafficLight(color) {
+    document.getElementById('light-red').classList.remove('active');
+    document.getElementById('light-yellow').classList.remove('active');
+    document.getElementById('light-green').classList.remove('active');
+    if(color) {
+        document.getElementById('light-' + color).classList.add('active');
+    }
+}
+
+// Función principal que actualiza TODA la UI con los resultados del modelo
+function updateUI(scores, classLabels) {
+    let maxScore = 0;
+    let winnerClass = '';
+
+    // 1. Actualizar las 4 barras de progreso simultáneamente
+    for (let i = 0; i < classLabels.length; i++) {
+        const className = normalizeClassName(classLabels[i]);
+        const score = scores[i] * 100;
+        
+        if(score > maxScore) {
+            maxScore = score;
+            winnerClass = className;
+        }
+
+        const mapData = uiMap[className];
+        if(mapData) {
+            document.getElementById(mapData.val).innerText = Math.round(score) + '%';
+            document.getElementById(mapData.fill).style.width = score + '%';
+        }
+    }
+
+    // 2. Actualizar el estado global (Semáforo y Panel)
+    // Usamos un umbral (ej. 60%) para evitar que parpadee mucho si está indeciso
+    if(maxScore > 60) {
+        const winnerData = uiMap[winnerClass];
+        if(winnerData) {
+            panel.className = 'alert-panel ' + winnerData.stateClass;
+            icon.innerText = winnerData.icon;
+            text.innerText = winnerData.label; // Ya no mostramos el % aquí porque están en las barras
+            text.style.color = winnerData.color;
+            setTrafficLight(winnerData.light);
+        }
+    }
+}
+
+
+// ==========================================
+// AUDIO VISUALIZER (USANDO DATOS DE TEACHABLE MACHINE)
+// ==========================================
+function setupCanvas() {
+    canvas.width = canvas.parentElement.clientWidth;
+    canvas.height = canvas.parentElement.clientHeight;
+}
+window.addEventListener('resize', setupCanvas);
+
+// Dibujar el espectrograma que nos envía el modelo
+function drawVisualizer(spectrogramData) {
+    if (!spectrogramData) return;
+    
+    // Limpiar canvas con un fondo semitransparente para dar efecto de "estela"
+    canvasCtx.fillStyle = 'rgba(11, 15, 25, 0.4)'; 
+    canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const bufferLength = spectrogramData.length;
+    const barWidth = (canvas.width / bufferLength) * 2;
+    let barHeight;
+    let x = 0;
+
+    for(let i = 0; i < bufferLength; i++) {
+        // Los datos del espectrograma de TM suelen estar entre -100 y 0, o normalizados.
+        // Transformamos el valor para que sea una altura visible.
+        let val = spectrogramData[i];
+        
+        // Ajuste empírico para el modelo de audio de TF
+        barHeight = (val + 100) * 1.5; 
+        if (barHeight < 0) barHeight = 0;
+
+        // Colores que cambian dinámicamente según la frecuencia
+        const r = barHeight + (25 * (i/bufferLength));
+        const g = 250 * (i/bufferLength);
+        const b = 250;
+        
+        canvasCtx.fillStyle = `rgb(${r},${g},${b})`;
+        canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+        x += barWidth + 1;
+    }
+}
+
+
+// ==========================================
+// INICIALIZACIÓN DE TENSORFLOW / TEACHABLE MACHINE
+// ==========================================
+async function createModel() {
+    const checkpointURL = URL + "model.json"; 
+    const metadataURL = URL + "metadata.json"; 
+
+    const recognizer = speechCommands.create(
+        "BROWSER_FFT",
+        undefined,
+        checkpointURL,
+        metadataURL
+    );
+
+    await recognizer.ensureModelLoaded();
+    return recognizer;
+}
+
+// Evento principal al hacer clic en el botón
+btnStart.addEventListener('click', async () => {
+    try {
+        // Confirmación visual y de depuración inmediata
+        alert("Botón presionado. Iniciando proceso...");
+        if(isListening) return;
+        
+        btnStart.disabled = true;
+        btnStart.innerText = "Iniciando (Paso 1)...";
+
+        // Verificación de entorno seguro
+        if (window.location.protocol === 'file:') {
+            alert("⚠️ Estás abriendo el archivo localmente (file:///). Edge bloquea el micrófono. Usa Live Server.");
+            btnStart.innerText = "Error - Requiere Live Server";
+            return;
+        }
+
+        // 1. Cargar el modelo de IA y configurar canvas
+        setupCanvas();
+        btnStart.innerText = "Descargando Modelo IA (Paso 2)...";
+        recognizer = await createModel();
+        
+        if (!recognizer) {
+            throw new Error("El modelo no se cargó correctamente.");
+        }
+        
+        const classLabels = recognizer.wordLabels(); 
+
+        // 2. Cambiar estado de UI y comenzar a escuchar
+        btnStart.innerText = "Solicitando Micrófono (Paso 3)...";
+        btnStart.style.borderColor = "var(--red)";
+        btnStart.style.color = "var(--red)";
+        btnStart.style.boxShadow = "0 0 15px rgba(255, 42, 85, 0.4)";
+        isListening = true;
+
+        // La IA empieza a predecir
+        await recognizer.listen(result => {
+            updateUI(result.scores, classLabels);
+            
+            // Usamos el espectrograma directo del modelo para el canvas
+            if (result.spectrogram) {
+                drawVisualizer(result.spectrogram.data);
+            }
+        }, {
+            includeSpectrogram: true, // Activamos el espectrograma nativo del modelo
+            invokeCallbackOnNoise: true, // Queremos que nos envíe datos constantemente aunque parezca ruido
+            overlapFactor: 0.75 // Se superpone un 75% para actualizar más rápido
+        });
+        
+        btnStart.innerText = "Analizando Audio...";
+
+    } catch (error) {
+        console.error("Error activando micrófono o IA:", error);
+        alert("Ocurrió un error: " + error.message);
+        btnStart.innerText = "Error - Reintentar";
+        btnStart.disabled = false;
+        btnStart.style.borderColor = "var(--orange)";
+        btnStart.style.color = "var(--orange)";
+    }
+});
+
+// Estado Inicial al abrir la página
+window.onload = () => {
+    setTrafficLight('green');
+};
